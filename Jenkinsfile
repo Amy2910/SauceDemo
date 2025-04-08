@@ -19,7 +19,7 @@ pipeline {
 
         stage('Run Robot Tests') {
             steps {
-                bat 'robot -d . SauceDemoTests.robot'
+                bat 'robot -d . tests/SauceDemoTests.robot'
                 // "-d ." pour générer output.xml dans le workspace
             }
         }
