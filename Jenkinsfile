@@ -2,60 +2,50 @@ pipeline {
     agent any
 
     environment {
-        ROBOT_REPORTS = 'results'
-        OUTPUT_XML = 'results/output.xml'
+        API_URL = 'https://xray.cloud.getxray.app/api/v2/authenticate'
+        CLIENT_ID = 'AFC9594E0A7F469592C85F5D6BDC6EEB'
+        CLIENT_SECRET = 'ae0402b7075192c2a554bde07c9ee9ff424e3ab764a1ac082fda09aa39b370f8'
+        TEST_RESULT_FILE = 'output.xml'
     }
 
     stages {
-        stage('Install Dependencies') {
+        stage('Checkout') {
             steps {
-                echo '🔧 Installing dependencies...'
-                sh '''
-                    pip install --upgrade pip
-                    pip install robotframework robotframework-seleniumlibrary
-                '''
+                git credentialsId: 'login_git',
+                    branch: 'master',
+                    url: 'https://github.com/Amy2910/SauceDemo.git'
             }
         }
 
         stage('Run Robot Tests') {
             steps {
-                echo '🚀 Running Robot Framework tests...'
-                sh '''
-                    mkdir -p $ROBOT_REPORTS
-                    robot --output $OUTPUT_XML tests/
-                '''
+                bat 'robot -d . SauceDemoTests.robot'
+                // "-d ." pour générer output.xml dans le workspace
             }
         }
 
-        stage('Upload to Xray') {
+        stage('Get Xray Token') {
             steps {
-                echo '📡 Uploading results to Xray...'
-
-                withCredentials([string(credentialsId: 'XRAY_API_TOKEN', variable: 'XRAY_TOKEN')]) {
-                    sh '''
-                        echo '📤 Envoi en cours...'
-                        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-                          -H "Content-Type: text/xml" \
-                          -X POST \
-                          -H "Authorization: Bearer $XRAY_TOKEN" \
-                          --data @$OUTPUT_XML \
-                          "https://xray.cloud.getxray.app/api/v2/import/execution/robot?projectKey=POEI20252")
-
-                        if [ "$RESPONSE" = "200" ]; then
-                            echo "✅ Résultats envoyés avec succès à Xray."
-                        else
-                            echo "❌ Échec de l'envoi à Xray. Code HTTP: $RESPONSE"
-                            exit 1
-                        fi
-                    '''
-                }
+                bat """
+                    curl -H "Content-Type: application/json" ^
+                    -X POST ^
+                    --data "{ \\"client_id\\": \\"%CLIENT_ID%\\", \\"client_secret\\": \\"%CLIENT_SECRET%\\" }" ^
+                    %API_URL% > token.txt
+                """
             }
         }
-    }
 
-    post {
-        always {
-            archiveArtifacts artifacts: 'results/*.xml', allowEmptyArchive: true
+        stage('Send Results to Xray') {
+            steps {
+                bat """
+                    set /p TOKEN=<token.txt
+                    curl -H "Content-Type: text/xml" ^
+                    -X POST ^
+                    -H "Authorization: Bearer %TOKEN%" ^
+                    --data "@%TEST_RESULT_FILE%" ^
+                    "https://xray.cloud.getxray.app/api/v2/import/execution/robot?projectKey=POEI20252"
+                """
+            }
         }
     }
 }
